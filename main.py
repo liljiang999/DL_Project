@@ -15,6 +15,7 @@ import torchvision.transforms as transforms
 import torch.nn.functional as F
 from tqdm import tqdm
 import argparse
+import albumentations as A
 
 
 from CustomDataset import SemiSupervisedDataset
@@ -129,25 +130,19 @@ def main(args):
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
     logger.info(device)
 
-    training_transform = transforms.Compose([
-        transforms.RandomRotation(30),
-        transforms.Resize((args['hidden_size'], args['hidden_size'])),
-        transforms.CenterCrop(args['hidden_size']),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-    ])
+    training_transforms = A.Compose([A.Resize(height=128, width=128, p=1)], p=1)
 
-    validation_transform = transforms.Compose([
-        transforms.Resize(args['hidden_size']),
-        transforms.CenterCrop(args['hidden_size']),
-        transforms.ToTensor(),
-    ])
+    validation_transform = A.Compose([A.Resize(height=128, width=128, p=1)], p=1)
+
+    # 测试数据路径
+    data_roots = ['./datas/thymoma', './datas/thymoma_unlabeled']
+    # 创建数据集对象
+    dataset = SemiSupervisedDataset(data_roots, transform=transforms)
+
 
     # 创建训练和验证数据集
-    training_dataset = SemiSupervisedDataset(data_dir / "thymoma_labeled", data_dir / "thymoma_unlabeled",
-                                     transform=training_transform, image_ext=".jpg")
-    validation_dataset = SemiSupervisedDataset(data_dir / "thymoma_labeled", data_dir / "thymoma_unlabeled",
-                                       transform=validation_transform, image_ext=".jpg")
+    training_dataset = SemiSupervisedDataset(data_roots, transform=training_transforms, image_ext=".jpg")
+    validation_dataset = SemiSupervisedDataset(data_roots, transform=validation_transform, image_ext=".jpg")
 
     train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=args['batch_size'], shuffle=True, **kwargs)
     test_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=args['batch_size'], shuffle=True, **kwargs)

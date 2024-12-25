@@ -131,7 +131,7 @@ def main(args):
 
     training_transform = transforms.Compose([
         transforms.RandomRotation(30),
-        transforms.Resize(args['hidden_size']),
+        transforms.Resize((args['hidden_size'], args['hidden_size'])),
         transforms.CenterCrop(args['hidden_size']),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),

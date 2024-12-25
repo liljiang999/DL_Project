@@ -53,11 +53,11 @@ Segnet(
   (bn12d): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
   (conv11d): Conv2d(64, 1, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
 )
-stack expects each tensor to be equal size, but got [0] at entry 0 and [256, 256] at entry 10
+stack expects each tensor to be equal size, but got [256, 256] at entry 0 and [255, 255] at entry 14
 Traceback (most recent call last):
-  File "D:\Desktop\Files\Homework\G31\深度学习\Project\main.py", line 195, in <module>
+  File "D:\Desktop\Files\Homework\G31\深度学习\Project\main.py", line 194, in <module>
     main(params)
-  File "D:\Desktop\Files\Homework\G31\深度学习\Project\main.py", line 161, in main
+  File "D:\Desktop\Files\Homework\G31\深度学习\Project\main.py", line 160, in main
     train(args, model, device, train_loader, optimizer, epoch)
   File "D:\Desktop\Files\Homework\G31\深度学习\Project\main.py", line 64, in train
     for batch_idx, (data, target) in enumerate(train_loader):
@@ -82,4 +82,4 @@ Traceback (most recent call last):
   File "D:\Desktop\Files\test_code\DL_class\pythonProject\.venv\Lib\site-packages\torch\utils\data\_utils\collate.py", line 214, in collate_tensor_fn
     return torch.stack(batch, 0, out=out)
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-RuntimeError: stack expects each tensor to be equal size, but got [0] at entry 0 and [256, 256] at entry 10
+RuntimeError: stack expects each tensor to be equal size, but got [256, 256] at entry 0 and [255, 255] at entry 14

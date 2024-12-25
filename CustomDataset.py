@@ -1,59 +1,86 @@
+import glob
+
+import cv2
 import torch
 import os
 from torchvision import transforms
 from PIL import Image
 import random
 import pandas as pd
+import os.path as osp
 import numpy as np
 
 
 # 创建半监督数据集
 class SemiSupervisedDataset(torch.utils.data.Dataset):
-    def __init__(self, labeled_dir, unlabeled_dir, transform=None, image_ext=".jpg"):
-        self.labeled_dir = labeled_dir
-        self.unlabeled_dir = unlabeled_dir
+    def __init__(self, data_roots, transform=None, image_ext=".jpg"):
+        self.data_roots = data_roots
         self.transform = transform
         self.image_ext = image_ext
 
-        # 加载有标签图像和掩膜
-        self.labeled_images = [f for f in os.listdir(labeled_dir) if f.endswith(self.image_ext)]
+        self.samples = []
 
-        # 加载无标签图像
-        self.unlabeled_images = [f for f in os.listdir(unlabeled_dir) if f.endswith(self.image_ext)]
+        for root in data_roots:
+            im_files = glob.glob(osp.join(root, "*" + self.image_ext), recursive=True)
+            for im_file in im_files:
+                anno_file = im_file.replace(self.image_ext, "_mask"+ self.image_ext)
+                if osp.exists(anno_file):
+                    self.samples.append((im_file, anno_file))
+                else:
+                    self.samples.append((im_file, None))
 
-        # 随机打乱无标签图像数据
-        random.shuffle(self.unlabeled_images)
+        np.random.shuffle(self.samples)
+
+        print('Total samples:', len(self.samples))
 
     def __len__(self):
-        # 半监督数据集的长度是有标签和无标签数据的总和
-        return len(self.labeled_images) + len(self.unlabeled_images)
+        return len(self.samples)
 
     def __getitem__(self, idx):
-        if idx < len(self.labeled_images):
-            # 从有标签图像中加载
-            img_name = os.path.join(self.labeled_dir, self.labeled_images[idx])
-            label_name = img_name.replace(self.image_ext, self.image_ext)
+        im_file, anno_file = self.samples[idx]
+        # 用cv2读取BGR
+        image = cv2.imread(im_file, 1)
+        # 转为RGB
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-            # 读取图像和标签
-            image = Image.open(img_name).convert("RGB")  # 读取彩色图像
-            label = Image.open(label_name).convert("L")  # 读取标签图像（灰度图）
-
-            # 如果有指定 transform，则应用
-            if self.transform:
-                image = self.transform(image)
-            label = torch.tensor(np.array(label)).long()  # 转换标签为 tensor
-
-            return image, label  # 有标签返回 (图像, 标签)
+        if anno_file is None:
+            mask = np.zeros(image.shape[0:2], dtype=np.int32)  # 创建0矩阵, 后面也不会用到
+            y = 0.0  # 指示minibatch里面哪张图像无标签
         else:
-            # 从无标签图像中加载
-            idx_unlabeled = idx - len(self.labeled_images)
-            img_name = os.path.join(self.unlabeled_dir, self.unlabeled_images[idx_unlabeled])
+            mask = cv2.imread(anno_file, 0)  # 灰度图方式读取
+            mask[mask > 0] = 1
+            y = 1.0  # 指示minibatch里面哪张图像有标签
 
-            # 读取无标签图像
-            image = Image.open(img_name).convert("RGB")  # 读取彩色图像
+        if self.transform:
+            transformed = self.transform(image=image, mask=mask)
+            image = transformed['image']
+            mask = transformed['mask']
 
-            # 如果有指定 transform，则应用
-            if self.transform:
-                image = self.transform(image)
+        image = image.transpose((2, 0, 1))  # (H,W,3)->(3,H,W)
+        return image, mask, y
 
-            return image, None  # 无标签返回 (图像, None)
+# 测试代码
+if __name__ == '__main__':
+    import matplotlib.pyplot as plt
+    from torch.utils.data import DataLoader
+    import albumentations as A
+
+    transforms = A.Compose([A.Resize(height=128, width=128, p=1)], p=1)
+
+    # 测试数据路径
+    data_roots = ['./datas/thymoma','./datas/thymoma_unlabeled']
+    # 创建数据集对象
+    dataset = SemiSupervisedDataset(data_roots, transform=transforms)
+
+    for k in range(len(dataset)):
+        image, mask, y = dataset[k]
+        print(image.shape, mask.shape)
+        print(np.unique(mask))
+
+        image = image.transpose((1, 2, 0))
+        plt.subplot(1, 2, 1)
+        plt.imshow(image)
+        plt.subplot(1, 2, 2)
+        plt.imshow(mask, cmap='gray')
+
+        plt.show()

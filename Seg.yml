@@ -3,8 +3,9 @@ experimentName: Seg
 trialGpuNumber: 1
 trialConcurrency: 1
 
-maxExperimentDuration: 24h
-maxTrialNumber: 10
+maxExperimentDuration: 12h
+maxTrialNumber: 5
+
 
 searchSpaceFile: search_space.json
 
@@ -17,6 +18,5 @@ tuner:
 
 trainingService:
   platform: local
-  useActiveGpu: false
-
-
+  useActiveGpu: true
+  maxTrialNumberPerGpu: 3

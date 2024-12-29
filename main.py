@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 from pathlib import Path
 
 import nni
@@ -20,11 +21,16 @@ import albumentations as A
 
 from CustomDataset import SemiSupervisedDataset
 from Segnet import Segnet
+from dice_loss import MultiClassDiceLoss, MultiClassDiceCoeff
 
 data_dir = Path("./datas")
 data_dir.mkdir(parents=True, exist_ok=True)
 result_dir = Path("./results")
 result_dir.mkdir(parents=True, exist_ok=True)
+
+# 记录最好的模型和验证精度
+best_model = None
+best_accuracy = 0.0
 
 
 if not os.path.exists(data_dir):
@@ -33,6 +39,54 @@ if not os.path.exists(data_dir):
 if os.path.exists('log.log'):
     os.remove('log.log')
 
+
+def draw_progress_bar(cur, total, bar_len=50):
+    '''
+    print progress bar during training
+    '''
+    cur_len = int(cur/total*bar_len)
+    sys.stdout.write('\r')
+    sys.stdout.write("[{:<{}}] {}/{}".format("=" * cur_len, bar_len, cur, total))
+    sys.stdout.flush()
+
+
+class EMA():
+    def __init__(self, model, decay = 0.98):
+        self.model = model
+        self.decay = decay
+        self.shadow = {}#记录教师模型的参数
+        self.backup = {}#备份学生模型的参数
+
+    def register(self):
+        #开始训练前就要调用，将学生模型的参数都记录到shadow里面去
+        for name, param in self.model.named_parameters():
+            if not param.requires_grad:
+                continue
+            self.shadow[name] = param.data.clone()
+
+    def update(self):
+        #把学生的参数更新到teacher模型里面去
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.shadow
+                new_average = (1.0 - self.decay) * param.data + self.decay * self.shadow[name]
+                self.shadow[name] = new_average.clone()
+
+    def apply_shadow(self):
+        #把shadow的参数copy到model中
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.shadow
+                self.backup[name] = param.data
+                param.data = self.shadow[name]
+
+    def restore(self):
+        #模型参数恢复为学生模型的参数
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                assert name in self.backup
+                param.data = self.backup[name]
+        self.backup = {}
 
 def setup_logger(logger_name, file_name):
     # 创建 logger 对象
@@ -56,24 +110,53 @@ logger = setup_logger('informations', 'log.log')
 training_loss_history = []
 validation_loss_history = []
 validation_accuracy_history = []
+validation_DSC_history = []
 
 # 定义训练函数
-def train(args, model, device, train_loader, optimizer, epoch):
-    loss_fn = torch.nn.CrossEntropyLoss()
+def train(args, model, ema, device, train_loader, optimizer, epoch):
+    ce_func = torch.nn.CrossEntropyLoss()  # 用于计算模型预测值和标签值之间的距离
+    dl_func = MultiClassDiceLoss(num_classes=2, skip_bg=True)  # 有标签的分割dice损失
+    mse_func = torch.nn.MSELoss()  # 一致性损失
     epoch_training_loss = []  # 初始化损失列表
+    steps_per_epoch = len(train_loader) // args['batch_size']
     model.train()
-    for batch_idx, (data, target) in enumerate(train_loader):
-        data, target = data.to(device), target.to(device)
+    for batch_idx, (images, masks, ys) in enumerate(train_loader):
+        images = torch.tensor(images, dtype=torch.float32).to(device)  # （N,3,H,W）
+        masks = torch.tensor(masks, dtype=torch.int64).to(device)  # (N,H,W)
+        ys = torch.tensor(ys, dtype=torch.int32).to(device)  # (N)
+        # 将图像输入student模型中，执行inference
+        student_outputs = model(images)
+        # 计算损失函数
+        if torch.count_nonzero(ys) > 0:  # minibatch是否存在有标签数据
+            keep = torch.where(ys > 0)  # 只有有标签的图像才需要算ce loss
+            keep_outputs = student_outputs[keep]  # (N_labeled, H, W)
+            keep_masks = masks[keep]
+            ce_loss = ce_func(keep_outputs, keep_masks)
+            dice_loss = dl_func(keep_outputs, keep_masks)
+        else:
+            ce_loss = 0.0
+            dice_loss = 0.0
+
+        # 将图像输入teacher模型中，执行inference,不管是否有标签都要计算mse损失
+        ema.apply_shadow()
+        teacher_outputs = model(images)
+        ema.restore()
+        consistent_loss = mse_func(teacher_outputs, student_outputs)
+
+        total_loss = ce_loss + dice_loss + consistent_loss
+
         optimizer.zero_grad()
-        output = model(data)
-        loss = loss_fn(output, target)
-        loss.backward()
-        optimizer.step()
+        total_loss.backward()
+
+        # EMA更新教师的参数
+        ema.update()
+        draw_progress_bar(batch_idx + 1, steps_per_epoch)
+
         if batch_idx % 100 == 0:
             logger.info('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item()))
-        epoch_training_loss.append(loss.item())  # 将每个batch的损失添加到当前epoch的损失列表中
+                epoch, batch_idx * len(images), len(train_loader.dataset),
+                100. * batch_idx / len(train_loader), total_loss.item()))
+        epoch_training_loss.append(total_loss.item())  # 将每个batch的损失添加到当前epoch的损失列表中
     # 计算当前epoch的平均训练损失并添加到训练损失历史列表中
     epoch_avg_training_loss = np.mean(epoch_training_loss)
     training_loss_history.append(epoch_avg_training_loss)
@@ -81,16 +164,21 @@ def train(args, model, device, train_loader, optimizer, epoch):
 
 # 定义测试和验证函数
 def test(model, device, test_loader):
+    print('\n starting evaluating...')
+    global best_model, best_accuracy
+    dsc_func = MultiClassDiceCoeff(num_classes=2, skip_bg=True)
+    eval_dsc = 0.0
     model.eval()
     test_loss = 0
     correct = 0
     with torch.no_grad():
-        for data, target in test_loader:
-            data, target = data.to(device), target.to(device)
-            output = model(data)
-            test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
-            pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-            correct += pred.eq(target.view_as(pred)).sum().item()
+        for ims, masks, ys in test_loader:
+            ims = ims.to(device).float()
+            masks = masks.to(device).long()
+
+            preds = model(ims)
+            dsc = dsc_func(preds, masks)
+            eval_dsc += dsc.item()
 
     test_loss /= len(test_loader.dataset)
 
@@ -101,9 +189,15 @@ def test(model, device, test_loader):
     validation_loss_history.append(test_loss)
     validation_accuracy = 100. * correct / len(test_loader.dataset)
     validation_accuracy_history.append(validation_accuracy)
+    validation_DSC_history.append(eval_dsc / len(test_loader.dataset))
+
+    # 判断是否保存模型
+    if validation_accuracy > best_accuracy:
+        best_accuracy = validation_accuracy
+        best_model = model.state_dict()  # 保存最佳模型的参数
+        torch.save(best_model, result_dir / 'best_model.pth')  # 保存最好的模型
 
     return validation_accuracy
-
 
 # 配置超参数搜索空间
 def get_params():
@@ -130,29 +224,33 @@ def main(args):
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
     logger.info(device)
 
-    training_transforms = A.Compose([A.Resize(height=128, width=128, p=1)], p=1)
+    training_transforms = A.Compose([A.HorizontalFlip(p=0.5),
+                            A.RandomBrightnessContrast(p=0.2),
+                            A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=180, p=0.5),
+                            A.GridDistortion(p=0.1),
+                            A.OpticalDistortion(p=0.1),
+                            A.Resize(args['hidden_size'], args['hidden_size'])])
 
     validation_transform = A.Compose([A.Resize(height=128, width=128, p=1)], p=1)
 
     # 测试数据路径
-    data_roots = ['./datas/thymoma', './datas/thymoma_unlabeled']
-    # 创建数据集对象
-    dataset = SemiSupervisedDataset(data_roots, transform=transforms)
-
+    data_roots = ['./datas/thymoma_unlabeled', './datas/thymoma']
 
     # 创建训练和验证数据集
     training_dataset = SemiSupervisedDataset(data_roots, transform=training_transforms, image_ext=".jpg")
-    validation_dataset = SemiSupervisedDataset(data_roots, transform=validation_transform, image_ext=".jpg")
+    validation_dataset = SemiSupervisedDataset(['./datas/thymoma'], transform=validation_transform, image_ext=".jpg")
 
     train_loader = torch.utils.data.DataLoader(training_dataset, batch_size=args['batch_size'], shuffle=True, **kwargs)
     test_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=args['batch_size'], shuffle=True, **kwargs)
 
-    model = Segnet(input_nc=3, output_nc=1)
+    model = Segnet(input_nc=3, output_nc=2)
+    ema = EMA(model, 0.95)
+    ema.register()
     logger.info(model)
     optimizer = torch.optim.SGD(model.parameters(), lr=args['lr'], momentum=args['momentum'])
 
     for epoch in range(1, args['epochs'] + 1):
-        train(args, model, device, train_loader, optimizer, epoch)
+        train(args, model, ema, device, train_loader, optimizer, epoch)
         test_acc = test(model, device, test_loader)
         nni.report_intermediate_result(test_acc)
 

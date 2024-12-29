@@ -68,7 +68,7 @@ if __name__ == '__main__':
     transforms = A.Compose([A.Resize(height=128, width=128, p=1)], p=1)
 
     # 测试数据路径
-    data_roots = ['./datas/thymoma','./datas/thymoma_unlabeled']
+    data_roots = ['./datas/thymoma_unlabeled', './datas/thymoma']
     # 创建数据集对象
     dataset = SemiSupervisedDataset(data_roots, transform=transforms)
 

@@ -51,35 +51,6 @@ Segnet(
   (bn21d): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
   (conv12d): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
   (bn12d): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
-  (conv11d): Conv2d(64, 1, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+  (conv11d): Conv2d(64, 2, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
 )
-stack expects each tensor to be equal size, but got [256, 256] at entry 0 and [255, 255] at entry 14
-Traceback (most recent call last):
-  File "D:\Desktop\Files\Homework\G31\深度学习\Project\main.py", line 194, in <module>
-    main(params)
-  File "D:\Desktop\Files\Homework\G31\深度学习\Project\main.py", line 160, in main
-    train(args, model, device, train_loader, optimizer, epoch)
-  File "D:\Desktop\Files\Homework\G31\深度学习\Project\main.py", line 64, in train
-    for batch_idx, (data, target) in enumerate(train_loader):
-  File "D:\Desktop\Files\test_code\DL_class\pythonProject\.venv\Lib\site-packages\torch\utils\data\dataloader.py", line 630, in __next__
-    data = self._next_data()
-           ^^^^^^^^^^^^^^^^^
-  File "D:\Desktop\Files\test_code\DL_class\pythonProject\.venv\Lib\site-packages\torch\utils\data\dataloader.py", line 673, in _next_data
-    data = self._dataset_fetcher.fetch(index)  # may raise StopIteration
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "D:\Desktop\Files\test_code\DL_class\pythonProject\.venv\Lib\site-packages\torch\utils\data\_utils\fetch.py", line 55, in fetch
-    return self.collate_fn(data)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "D:\Desktop\Files\test_code\DL_class\pythonProject\.venv\Lib\site-packages\torch\utils\data\_utils\collate.py", line 317, in default_collate
-    return collate(batch, collate_fn_map=default_collate_fn_map)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "D:\Desktop\Files\test_code\DL_class\pythonProject\.venv\Lib\site-packages\torch\utils\data\_utils\collate.py", line 174, in collate
-    return [collate(samples, collate_fn_map=collate_fn_map) for samples in transposed]  # Backwards compatibility.
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "D:\Desktop\Files\test_code\DL_class\pythonProject\.venv\Lib\site-packages\torch\utils\data\_utils\collate.py", line 142, in collate
-    return collate_fn_map[elem_type](batch, collate_fn_map=collate_fn_map)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "D:\Desktop\Files\test_code\DL_class\pythonProject\.venv\Lib\site-packages\torch\utils\data\_utils\collate.py", line 214, in collate_tensor_fn
-    return torch.stack(batch, 0, out=out)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-RuntimeError: stack expects each tensor to be equal size, but got [256, 256] at entry 0 and [255, 255] at entry 14
+Train Epoch: 1 [0/71084 (0%)]	Loss: 2.308916

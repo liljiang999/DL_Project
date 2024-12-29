@@ -1,0 +1,22 @@
+experimentName: Seg
+
+trialGpuNumber: 1
+trialConcurrency: 1
+
+maxExperimentDuration: 24h
+maxTrialNumber: 10
+
+searchSpaceFile: search_space.json
+
+trialCommand: python main.py
+
+tuner:
+  name: TPE
+  classArgs:
+    optimize_mode: maximize
+
+trainingService:
+  platform: local
+  useActiveGpu: false
+
+

@@ -1,4 +1,4 @@
-{'batch_size': 32, 'hidden_size': 64, 'lr': 0.001, 'momentum': 0.3458557194313071}
+{}
 cpu
 Segnet(
   (conv11): Conv2d(3, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
@@ -53,4 +53,5 @@ Segnet(
   (bn12d): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
   (conv11d): Conv2d(64, 2, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
 )
-Train Epoch: 1 [0/71084 (0%)]	Loss: 2.147004
+Train Epoch: 1 [0/71084 (0%)]	Loss: 2.050003
+Train Epoch: 1 [1600/71084 (2%)]	Loss: 2.379267

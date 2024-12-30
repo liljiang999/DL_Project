@@ -244,6 +244,7 @@ def main(args):
     test_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=args['batch_size'], shuffle=True, **kwargs)
 
     model = Segnet(input_nc=3, output_nc=2)
+    model.to(device)
     ema = EMA(model, 0.95)
     ema.register()
     logger.info(model)
